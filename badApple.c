@@ -36,19 +36,20 @@ void sigHandler (int sigNum) {
 void childNodeProcess(int nodeId, int readPipe, int writePipe) {
     Message message;
     printf("inside child process node: %d\n", nodeId);
-    
+
+    read(readPipe, &message, sizeof(Message));
         // Wait to receive the apple
         // if (read(readPipe, &message, sizeof(Message)) <= 0) {
         //     return;
         // }
         
         // Check if this is a shutdown signal
-        if (message.destination == -1) {
-            printf("Node %d has received shutdown signal.\n", nodeId);
-            // Pass shutdown signal to next node
-            write(writePipe, &message, sizeof(Message));
-            return;
-        }
+        // if (message.destination == -1) {
+        //     printf("Node %d has received shutdown signal.\n", nodeId);
+        //     // Pass shutdown signal to next node
+        //     write(writePipe, &message, sizeof(Message));
+        //     return;
+        // }
         
         // If apple received, check if message is for node
         if (!message.isEmpty) {
@@ -69,6 +70,8 @@ void childNodeProcess(int nodeId, int readPipe, int writePipe) {
         // Pass the apple to next node
         write(writePipe, &message, sizeof(Message));
         
+        // recusively fork child processes until numNodes reached
+        // childProcess 0 -> childProcess 1 -> childProcess 2 -> exit -> ParentProcess
         int status;
         pid_t pid = fork();
         if(pid < 0){
@@ -78,11 +81,9 @@ void childNodeProcess(int nodeId, int readPipe, int writePipe) {
         if(pid == 0){
             //child process call ChildNodeProcess
             printf("next child process node id = %d\n", nodeId + 1);
-            if(nodeId + 1 == numNodes){
+            if(nodeId == numNodes){
                 printf("Failed to find destination.\n");
                 printf("[Node %d] Process terminated\n", nodeId);
-                close(readPipe);
-                close(writePipe);
                 return;
             }
             childNodeProcess(nodeId + 1, readPipe, writePipe);
@@ -90,10 +91,10 @@ void childNodeProcess(int nodeId, int readPipe, int writePipe) {
         else{
             close(readPipe);
             close(writePipe);
-            printf("[Node %d] Process terminated\n", nodeId);
             printf("Waiting for child node %d \n", nodeId);
             waitpid(pid, &status, 0);
-            printf("Done with node: %d\n", nodeId);            
+            printf("Done with node: %d\n", nodeId);      
+            return;      
         }
 
     // printf("[Node %d] Process terminated\n", nodeId);
@@ -102,72 +103,63 @@ void childNodeProcess(int nodeId, int readPipe, int writePipe) {
 }
 
 // Function for parent process
-void parentNodeProcess(int nodeId, int readPipe, int writePipe) {
-    childNodeProcess(nodeId, readPipe, writePipe);
-    // // Implement
-    // int status;
-    // // create fork n nodes = n child processes 
-    // pid_t pid = fork();
-    // if(pid < 0){
-    //     perror("Fork Failed");
-    //     exit(1);
-    // }
-    // if(pid == 0){
-    //     //child process call ChildNodeProcess
-    //     printf("next child process node id = %d\n", nodeId + 1);
-    //     if(nodeId < numNodes - 1){
-    //         parentNodeProcess(nodeId + 1, readPipe, writePipe);
-    //     }
-    // }
-    // else{
-        //parent process
-        // Parent process prompt for input
-        // if(nodeId == numNodes){
-        //open(writePipe);
+void parentNodeProcess(int readPipe, int writePipe) { 
+    // Implement
+  //  while(true){
+    int status;
+    int nodeId = 0;
+    pid_t pid = fork();
+    if(pid < 0){
+        perror("Fork Failed");
+        exit(1);
+    }
+    if(pid > 0){
         Message message;
 
+        // ask user if they want to send message
         char input;
         printf("Would you like to send a message? y/n ");
         scanf("%c", &input);
+        // if user wants to send message
         if(input == 'y'){
             // prompt user for destination node
             int dest;
             printf("Message Destination: ");
-            // while(scanf("%d", &dest) > numNodes-1 || scanf("%d", &dest) < 0){
-            //     printf("Invalid Destination.\n");
-            //     printf("New Message Destination: ");
-                scanf("%d", &dest);
-            // }
+            
+            while (getchar() != '\n');
+            scanf("%d", &dest);
 
             // prompt user for message
-            printf("Input Message: ");
             char getContent[SIZE];
-            //int check;
-            //while(check = getchar() != '\n'){
+            printf("Input Message: ");
+            
+            while (getchar() != '\n');
             fgets(getContent, SIZE, stdin);
-            //}
+            
+            // add to writePipe
             memcpy(message.content, getContent, sizeof(getContent));
             message.destination = dest;
             message.isEmpty = 0;
 
             write(writePipe, &message, sizeof(Message));
-            write(1, &message, sizeof(Message));
+
             close(writePipe);
+            close(readPipe);
+            // initialize node to 0 and call Child process
+            int nodeId = 0;
+            childNodeProcess(nodeId, readPipe, writePipe);
         }
-        else if(input == 'n'){
+        // exit gracefully if user doesn't want to send message
+        else{
             printf("No more messages.\n");
             raise(SIGINT);
-            return;
         }
-        return;
-    // } // if nodeId == numNodes
+    }// pid > 0
 
-    //     // wait for child process to finish
-    //     printf("Waiting for child node %d \n", nodeId);
-    //     waitpid(pid, &status, 0);
-    //     printf("Done with node: %d\n", nodeId);
-        
-    // } // if pid > 0
+    else if(pid == 0){
+        childNodeProcess(nodeId, readPipe, writePipe);
+    }
+//} //while true
 }
 
 int main() {
@@ -190,10 +182,9 @@ int main() {
     int writePipe = *pipes[1];
     
     // // Finish main function  
-    int nodeId = 0;
-    // close(readPipe);
-    // close(writePipe);
-    parentNodeProcess(nodeId, readPipe, writePipe);
-    
+   
+    // call parent process
+    parentNodeProcess(readPipe, writePipe);
 
 }
+
