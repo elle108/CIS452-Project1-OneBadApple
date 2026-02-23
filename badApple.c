@@ -105,7 +105,6 @@ void childNodeProcess(int nodeId, int readPipe, int writePipe) {
 // Function for parent process
 void parentNodeProcess(int readPipe, int writePipe) { 
     // Implement
-  //  while(true){
     int status;
     int nodeId = 0;
     pid_t pid = fork();
@@ -158,8 +157,6 @@ void parentNodeProcess(int readPipe, int writePipe) {
             raise(SIGINT);
         }
     }// pid > 0
-
-//} //while true
 }
 
 int main() {
