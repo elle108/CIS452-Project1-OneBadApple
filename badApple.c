@@ -113,7 +113,11 @@ void parentNodeProcess(int readPipe, int writePipe) {
         perror("Fork Failed");
         exit(1);
     }
+    if(pid == 0){
+        childNodeProcess(nodeId, readPipe, writePipe);
+    }
     if(pid > 0){
+        waitpid(pid, &status, 0);
         Message message;
 
         // ask user if they want to send message
@@ -135,7 +139,7 @@ void parentNodeProcess(int readPipe, int writePipe) {
             
             while (getchar() != '\n');
             fgets(getContent, SIZE, stdin);
-            
+            while (getchar() != '\n');
             // add to writePipe
             memcpy(message.content, getContent, sizeof(getContent));
             message.destination = dest;
@@ -146,8 +150,7 @@ void parentNodeProcess(int readPipe, int writePipe) {
             close(writePipe);
             close(readPipe);
             // initialize node to 0 and call Child process
-            int nodeId = 0;
-            childNodeProcess(nodeId, readPipe, writePipe);
+            parentNodeProcess(readPipe, writePipe);
         }
         // exit gracefully if user doesn't want to send message
         else{
@@ -156,9 +159,6 @@ void parentNodeProcess(int readPipe, int writePipe) {
         }
     }// pid > 0
 
-    else if(pid == 0){
-        childNodeProcess(nodeId, readPipe, writePipe);
-    }
 //} //while true
 }
 
