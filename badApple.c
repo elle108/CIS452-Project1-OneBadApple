@@ -24,6 +24,7 @@ struct Message {
 int numNodes;
 
 // Signal handler
+// Signal handler
 void sigHandler (int sigNum) {
     if(sigNum == SIGINT){
         printf ("Exit Gracefully\n");
@@ -47,20 +48,38 @@ void childNodeProcess(int nodeId, int readPipe, int writePipe) {
         // If apple is received, see if there is a message for this Node
         if (message.isEmpty == 0){
             if (message.destination == nodeId) {
+                printf("Destination reached! ");
                 printf("Node %d has received message: %s\n", nodeId, message.content);
                 
                 // Change message to empty now
                 message.isEmpty = 1;
                 strcpy(message.content, "");
+
+                if (nodeId == numNodes - 1){
+                    printf("Node %d is passing the empty message to next Node 0\n", nodeId);
+                }
+                else {
+                    printf("Node %d is passing the empty message to next Node %d\n", nodeId, nodeId + 1);
+                }
             }
             // If message is not for this Node then pass it along 
             else {
-                printf("Node %d is passing the message to destination Node %d\n", nodeId, message.destination);
+                if (nodeId == numNodes - 1){
+                    printf("Node %d is passing the message to next Node 0\n", nodeId);
+                }
+                else {
+                    printf("Node %d is passing the message to next Node %d\n", nodeId, nodeId + 1);
+                }
             }
         }
         // If the message is empty, pass it along
         else {
-            printf("Node %d is passing empty message to the next Node\n", nodeId);
+            if (nodeId == numNodes - 1){
+                printf("Node %d is passing the empty message to the next Node 0\n", nodeId);
+            }
+            else{
+                printf("Node %d is passing the empty message to the next Node %d\n", nodeId, nodeId+1);
+            }
         }
 
         // Pass the apple to the next node
@@ -95,10 +114,15 @@ void parentNodeProcess(int readPipe, int writePipe) {
 
         // Check if there is a message for Node 0
         if (message.isEmpty == 0 && message.destination == 0) {
-            printf("Node 0 has received message: %s\n", message.content);
+            printf("Destination reached! Node 0 has received message: %s\n", message.content);
             // Change message to empty now
             message.isEmpty = 1;
             strcpy(message.content, "");
+        }
+
+        // check if node s not reached for destination nodes out of bounds
+        if (message.isEmpty == 0 && message.destination != 0) {
+            printf("Failed to to find Node: %d\n", message.destination);
         }
 
         // Ask user for destination
@@ -115,7 +139,8 @@ void parentNodeProcess(int readPipe, int writePipe) {
         message.destination = destination;
         strcpy(message.content, input);
         message.isEmpty = 0;
-        printf("Node 0 is passing the message to destination Node %d\n", message.destination);
+
+        printf("Node 0 is passing the message to next Node 1\n");
         write(writePipe, &message, sizeof(struct Message));
 
     }
