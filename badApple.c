@@ -1,28 +1,27 @@
 #include <stdio.h>  
 #include <stdlib.h>  
-#include <sys/types.h>  
-#include <sys/stat.h> 
-#include <sys/ipc.h>  
-#include <sys/shm.h> 
 #include <unistd.h>
 #include <string.h>
 #include <signal.h>
 #include <sys/wait.h>
 #include <stdbool.h>
+#include <signal.h>
 
 // Message size
 #define SIZE 256
 
 // Struct for message
-typedef struct {
+struct Message {
+    // Node message is for
     int destination;
+    // Message content
     char content[SIZE];
+    // Flag to see if message is empty (1 if empty, 0 if not)
     int isEmpty;
-} Message;
+};
 
-// Global Variables
+// Global Variable for Number of Nodes
 int numNodes;
-int shutdown = 0;
 
 // Signal handler
 void sigHandler (int sigNum) {
@@ -32,156 +31,178 @@ void sigHandler (int sigNum) {
     }
 }
 
-// Child process function
+// Child process function for Nodes 1 to numNodes
 void childNodeProcess(int nodeId, int readPipe, int writePipe) {
-    Message message;
-    printf("inside child process node: %d\n", nodeId);
+    struct Message message;
+    printf("Created Process for Node %d\n", nodeId);
 
-    read(readPipe, &message, sizeof(Message));
-        // Wait to receive the apple
-        // if (read(readPipe, &message, sizeof(Message)) <= 0) {
-        //     return;
-        // }
-        
-        // Check if this is a shutdown signal
-        // if (message.destination == -1) {
-        //     printf("Node %d has received shutdown signal.\n", nodeId);
-        //     // Pass shutdown signal to next node
-        //     write(writePipe, &message, sizeof(Message));
-        //     return;
-        // }
-        
-        // If apple received, check if message is for node
-        if (!message.isEmpty) {
+    while(1){
+        // Wait to have the apple 
+        if (read(readPipe, &message, sizeof(struct Message)) <= 0) {
+            break;
+        }
+
+        printf("Node %d has received the apple\n", nodeId);
+
+        // If apple is received, see if there is a message for this Node
+        if (message.isEmpty == 0){
             if (message.destination == nodeId) {
                 printf("Node %d has received message: %s\n", nodeId, message.content);
-
-                // Message is now empty
+                
+                // Change message to empty now
                 message.isEmpty = 1;
                 strcpy(message.content, "");
-            } else {
-                printf("Node %d is passing message to destination: Node %d\n", 
-                       nodeId, message.destination);
             }
-        } else {
-            printf("Node %d is passing empty apple to next node\n", nodeId);
+            // If message is not for this Node then pass it along 
+            else {
+                printf("Node %d is passing the message to destination Node %d\n", nodeId, message.destination);
+            }
         }
+        // If the message is empty, pass it along
+        else {
+            printf("Node %d is passing empty message to the next Node\n", nodeId);
+        }
+
+        // Pass the apple to the next node
+        write(writePipe, &message, sizeof(struct Message));
+    }
+
+    close(readPipe);
+    close(writePipe);
+}
+
+// Function for parent process
+void parentNodeProcess(int readPipe, int writePipe) { 
+    struct Message message;
+    char input[SIZE];
+    int destination;
+
+    printf("Created process for Node 0 (parent node)\n");
+    printf("Node 0 will now send the initial empty apple\n");
+
+    // Send the empty apple to start off the process
+    message.destination = 0;
+    message.isEmpty = 1;
+    strcpy(message.content, "");
+    write(writePipe, &message, sizeof(struct Message));
+
+    while(1) {
+
+        // Wait to have apple
+        read(readPipe, &message, sizeof(struct Message));
+
+        printf("Node 0 has received the apple\n");
+
+        // Check if there is a message for Node 0
+        if (message.isEmpty == 0 && message.destination == 0) {
+            printf("Node 0 has received message: %s\n", message.content);
+            // Change message to empty now
+            message.isEmpty = 1;
+            strcpy(message.content, "");
+        }
+
+        // Ask user for destination
+        printf("Enter destination: ");
+        scanf("%d", &destination);
+        getchar();
         
-        // Pass the apple to next node
-        write(writePipe, &message, sizeof(Message));
-        
-        // recusively fork child processes until numNodes reached
-        // childProcess 0 -> childProcess 1 -> childProcess 2 -> exit -> ParentProcess
-        int status;
+        // Ask user for message
+        printf("Enter message: ");
+        if (fgets(input, SIZE, stdin) == NULL) input[0] = '\0';
+        input[strcspn(input, "\n")] = '\0';
+
+        // Send the message
+        message.destination = destination;
+        strcpy(message.content, input);
+        message.isEmpty = 0;
+        printf("Node 0 is passing the message to destination Node %d\n", message.destination);
+        write(writePipe, &message, sizeof(struct Message));
+
+    }
+    close(readPipe);
+    close(writePipe);
+}
+
+int main() {
+    printf("One Bad Apple Project\n");
+
+    // Get number of nodes from user
+    printf("Enter number of nodes: ");
+    scanf("%d", &numNodes);
+
+    // Clear enter key from input
+    while(getchar() != '\n');
+
+    // Setup signal handler
+    signal(SIGINT, sigHandler);
+    
+    // Create pipes
+    int pipes[numNodes][2];
+    for (int i = 0; i < numNodes; i++) {
+        if (pipe(pipes[i]) < 0) {
+            perror("pipe");
+            exit(1);
+        }
+    }
+
+    // For pipe setup, we created pipes[0] to pipes[numNodes - 1]
+    // Pipe [i][1] is write end and Pipe [i][0] is read end
+    // For each child, it reads from the previous node so pipe[i-1][0] and writes to pipe[i][1]
+
+    // Create child processes for nodes 1 to numNodes - 1
+    for(int i = 1; i < numNodes; i++){
         pid_t pid = fork();
         if(pid < 0){
             perror("Fork Failed");
             exit(1);
         }
         if(pid == 0){
-            //child process call ChildNodeProcess
-            printf("next child process node id = %d\n", nodeId + 1);
-            if(nodeId == numNodes){
-                printf("Failed to find destination.\n");
-                printf("[Node %d] Process terminated\n", nodeId);
-                return;
+            // Read end of previous node
+            int readPipe = pipes[i-1][0];
+            // Write end of next node
+            int writePipe = pipes[i][1];
+
+            // Close unused pipes
+            for (int j = 0; j < numNodes; j++) {
+                if (j == i - 1) {
+                    // This pipe is for input so close write end
+                    close(pipes[j][1]);
+                } else if (j == i) {
+                    // This pipe is for output so close read end
+                    close(pipes[j][0]);
+                } else {
+                    if (j != i - 1 && j != i) {
+                        // Close both ends of unused pipes
+                        close(pipes[j][0]);
+                        close(pipes[j][1]);
+                    }
+                }
             }
-            childNodeProcess(nodeId + 1, readPipe, writePipe);
+            childNodeProcess(i, readPipe, writePipe);
+            exit(0);
         }
-        else{
-            close(readPipe);
-            close(writePipe);
-            printf("Waiting for child node %d \n", nodeId);
-            waitpid(pid, &status, 0);
-            printf("Done with node: %d\n", nodeId);      
-            return;      
-        }
-
-    // printf("[Node %d] Process terminated\n", nodeId);
-    // close(readPipe);
-    // close(writePipe);
-}
-
-// Function for parent process
-void parentNodeProcess(int readPipe, int writePipe) { 
-    // Implement
-    int status;
-    int nodeId = 0;
-    pid_t pid = fork();
-    if(pid < 0){
-        perror("Fork Failed");
-        exit(1);
     }
-    if(pid == 0){
-        childNodeProcess(nodeId, readPipe, writePipe);
-    }
-    if(pid > 0){
-        waitpid(pid, &status, 0);
-        Message message;
 
-        // ask user if they want to send message
-        char input;
-        printf("Would you like to send a message? y/n ");
-        scanf("%c", &input);
-        // if user wants to send message
-        if(input == 'y'){
-            // prompt user for destination node
-            int dest;
-            printf("Message Destination: ");
-            
-            while (getchar() != '\n');
-            scanf("%d", &dest);
+    int parentReadPipe = pipes[numNodes - 1][0];
+    int parentWritePipe = pipes[0][1];
 
-            // prompt user for message
-            char getContent[SIZE];
-            printf("Input Message: ");
-            
-            while (getchar() != '\n');
-            fgets(getContent, SIZE, stdin);
-            while (getchar() != '\n');
-            // add to writePipe
-            memcpy(message.content, getContent, sizeof(getContent));
-            message.destination = dest;
-            message.isEmpty = 0;
-
-            write(writePipe, &message, sizeof(Message));
-
-            close(writePipe);
-            close(readPipe);
-            // initialize node to 0 and call Child process
-            parentNodeProcess(readPipe, writePipe);
+    // Close unused pipes
+    for (int j = 0; j < numNodes; j++) {
+        if (j == numNodes - 1) {
+            // Parent needs read end of last pipe so close write end
+            close(pipes[j][1]);
+        } else if (j == 0) {
+            // Parent needs the write end so close read end
+            close(pipes[j][0]);
+        } else {
+            // Close both ends of unused pipes
+            close(pipes[j][0]);
+            close(pipes[j][1]);     
         }
-        // exit gracefully if user doesn't want to send message
-        else{
-            printf("No more messages.\n");
-            raise(SIGINT);
-        }
-    }// pid > 0
-}
-
-int main() {
-    // Get number of nodes from user
-    printf("Enter number of nodes: ");
-    if (scanf("%d", &numNodes) != 1 || numNodes < 2) {
-        printf("Invalid number of nodes. Must be at least 2.\n");
-        return 1;
     }
-    
-    // Clear input buffer
-    while (getchar() != '\n');
-    
-    // Setup signal handler
-    signal(SIGINT, sigHandler);
-    
-    // Create pipes
-    int pipes[numNodes][2];
-    int readPipe = *pipes[0];
-    int writePipe = *pipes[1];
-    
-    // // Finish main function  
-   
-    // call parent process
-    parentNodeProcess(readPipe, writePipe);
 
+    parentNodeProcess(parentReadPipe, parentWritePipe);
+
+    return 0;
 }
 
