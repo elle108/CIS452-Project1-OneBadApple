@@ -120,7 +120,7 @@ void parentNodeProcess(int readPipe, int writePipe) {
             strcpy(message.content, "");
         }
 
-        // check if node s not reached for destination nodes out of bounds
+        // check if node is not reached for destination nodes out of bounds
         if (message.isEmpty == 0 && message.destination != 0) {
             printf("Failed to to find Node: %d\n", message.destination);
         }
