@@ -23,8 +23,6 @@ struct Message {
 // Global Variable for Number of Nodes
 int numNodes;
 
-// Signal handler
-// Signal handler
 void sigHandler (int sigNum) {
     if(sigNum == SIGINT){
         printf ("Exit Gracefully\n");
@@ -169,10 +167,6 @@ int main() {
             exit(1);
         }
     }
-
-    // For pipe setup, we created pipes[0] to pipes[numNodes - 1]
-    // Pipe [i][1] is write end and Pipe [i][0] is read end
-    // For each child, it reads from the previous node so pipe[i-1][0] and writes to pipe[i][1]
 
     // Create child processes for nodes 1 to numNodes - 1
     for(int i = 1; i < numNodes; i++){
